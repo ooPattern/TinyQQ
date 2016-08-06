@@ -8,8 +8,6 @@
 #include <string.h>
 #include "connectPool.h"
 
-using namespace std;
-
 //初始化连接池句柄指针
 CConnectPool* CConnectPool::_pInstance = NULL;
 
@@ -22,7 +20,7 @@ CConnectPool::CConnectPool()
 	_connPool.clear();
 	for(int i = 0; i < MAX_CONNECT_NUM; i++)
 	{
-		obj._valid = false;
+		obj._stat = CONN_INVALID;
 		obj._pConnect = mysql_init(NULL);
 		_connPool.push_back(obj);
 	}
@@ -76,16 +74,17 @@ MYSQL* CConnectPool::GetConnection(const char* pHost,
 	}
 
 	//遍历连接池检查是否存在可用的连接
-	list<T_CONNECT_OBJ>::iterator it;
+	vector<T_CONNECT_OBJ>::iterator it;
 	for(it = _connPool.begin(); it != _connPool.end(); ++it)
 	{
 		//连接池上以前使用过相同信息的连接
-		if((true == (*it)._valid)
+		if((CONN_IDLE == (*it)._stat)
 		&& (0 == MatchLogin((*it)._pConnect, pHost, pUser, pDbname)))
 		{
+			//将连接状态修改为正在使用,不是采用列表的方式移除数据,
+			//因为移除数据后如果进程崩溃可能无法回收内存,因此修改为统一由vector回收
 			pSQL = (*it)._pConnect;
-			//从连接池移除这个元素
-			it = _connPool.erase(it);
+			(*it)._stat = CONN_BUSY;
 			return pSQL;
 		}
 	}
@@ -93,7 +92,7 @@ MYSQL* CConnectPool::GetConnection(const char* pHost,
 	//如果没有存在可以直接使用的连接,就检查是否存在没有初始化的连接
 	for(it = _connPool.begin(); it != _connPool.end(); ++it)
 	{
-		if(false == (*it)._valid)
+		if(CONN_INVALID == (*it)._stat)
 		{
 			//连接池上以前没有使用过相同信息的连接
 			if(NULL == mysql_real_connect((*it)._pConnect, pHost, pUser,
@@ -102,10 +101,10 @@ MYSQL* CConnectPool::GetConnection(const char* pHost,
 				printf("mysql_real_connect err\n");
 				return NULL;
 			}
-			//设置连接成功状态
+			//将连接状态修改为正在使用,不是采用列表的方式移除数据,
+			//因为移除数据后如果进程崩溃可能无法回收内存,因此修改为统一由vector回收
 			pSQL = (*it)._pConnect;
-			//从连接池移除这个元素
-			it = _connPool.erase(it);
+			(*it)._stat = CONN_BUSY;
 			return pSQL;
 		}
 	}
@@ -117,29 +116,35 @@ MYSQL* CConnectPool::GetConnection(const char* pHost,
 //回收一个连接到连接池
 void CConnectPool::RecoverConnection(MYSQL* pConnect)
 {
-	T_CONNECT_OBJ obj;
-	//正常情况不会出现这种情况,总共分配的连接池怎么回收数量比分配的还多?
-	if(_connPool.size() > MAX_CONNECT_NUM)
+	vector<T_CONNECT_OBJ>::iterator it;
+
+	//在连接池中检查是否找到这个连接
+	for(it = _connPool.begin(); it != _connPool.end(); it++)
 	{
-		printf("RecoverConnection full err\n");
-		return;
+		//将连接修改为空闲状态,这样下次才可以继续使用
+		if((pConnect != NULL)
+		&& ((*it)._pConnect == pConnect)
+		&& ((*it)._stat != CONN_INVALID))
+		{
+			(*it)._stat = CONN_IDLE;
+			return;
+		}
 	}
-	obj._valid = true;
-	obj._pConnect = pConnect;
-	_connPool.push_back(obj);
+	//正常情况不会打印下列语句,连接池中找不到要回收的连接?
+	printf("RecoverConnection can not find err\n");
 }
 
-//销毁连接池
+//销毁连接池,如果忘记调用怎么办?
 void CConnectPool::DestoryConnectPool(void)
 {
 	MYSQL* pSQL = NULL;
-	list<T_CONNECT_OBJ>::iterator it;
+	vector<T_CONNECT_OBJ>::iterator it;
 
 	//释放连接分配的内存
 	for(it = _connPool.begin(); it != _connPool.end(); ++it)
 	{
 		pSQL = (*it)._pConnect;
-		(*it)._valid = false;
+		(*it)._stat = CONN_INVALID;
 		if(pSQL != NULL)
 		{
 			mysql_close(pSQL);

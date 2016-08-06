@@ -5,6 +5,7 @@
  *      Author: root
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "mysqlIntf.h"
 #include "connectPool.h"
@@ -42,11 +43,14 @@
 //使用连接池的n个问题：
 //1）连接池只能针对某个用户和某个数据库进行连接,连接池只能容纳一种用户的连接
 //2）连接池能中的连接如果失效怎么办?
-//3）如果连接失效,那么通过mysql_ping尝试再次进行连接
+//	 如果连接失效,那么通过mysql_ping尝试再次进行连接
 //4*) 如果连接还没回收到内存中,进程就异常退出,中间丢失的连接内存和连接池中的内存怎么管理?
 // 	  要不连接池还是通过vector管理(最后统一释放),否则中途pop(进程奔溃会丢失这个连接的内存没有释放),
 //5*) 如果连接池的连接不够用,还需要在mysqlIntf维护一个非连接池的连接吧,虽然可能频繁导致
 //	 TIME_WAIT,总比没有连接可用好
+//6) 如何检查new后面有没有析构,用信号函数模拟进程崩溃,进程中途崩溃会执行析构函数吗?
+//	 throw 1,abort();就算进程崩溃,没有运行析构函数,但是进程退出系统会回收进程分配的内存
+//7) Linux有没有工具可以检查内存泄露?
 
 //GetInstance为静态函数,不需要初始化对象也能直接调用
 //CConnectPool* s_pInstance = CConnectPool::GetInstance();
@@ -69,9 +73,8 @@ CMysqlHandle::~CMysqlHandle()
 		mysql_free_result(_pRes);
 		_pRes = NULL;
 	}
-	//关闭数据库,就算数据库没有连接也不会出现问题
-	//mysql_close(_pConnect);
-	//_pConnect内存由连接池进行管理
+	//_pConnect指向的内存由连接池进行管理,不能自己手动释放这个指针指向的内存
+	_pConnect = NULL;
 }
 
 
@@ -89,9 +92,8 @@ int CMysqlHandle::Connect(const char* pHost,
 		return 0;
 	}
 	//连接数据库,不需要初始化数据库mysql_init,因为_connect已经分配了数据库对象
-	//从连接池获取连接,不能直接用_pConnect复制,因为_pConnect置为空则
+	//从连接池获取连接,不能直接用_pConnect复制,因为_pConnect只有初始化时允许为空和析构时
 	pSQL = CConnectPool::GetInstance()->GetConnection(pHost, port, pUser, pPassword, pDbname);
-	//pSQL = CConnectPool::GetConnection(pHost, port, pUser, pPassword, pDbname);
 	if(NULL == pSQL)
 	{
 		printf("mysql_real_connect errr\n");
@@ -236,6 +238,10 @@ void TestMutliConnect(void)
 
 	//连接数据库
 	sql.Connect("127.0.0.1", MYSQL_PORT, "root", NULL, "student");
+
+	//模拟进程崩溃,检查是否会调用析构函数
+	abort();
+
 	//SQL查询
 	sql.SelectQuery(QUERY_LIDI_RECORD, result);
 	//打印查询结果
@@ -312,11 +318,9 @@ int TestSQL(void)
 int main( void )
 {
 	printf("hello world\n");
-
 	//初始化连接池内存
 	CConnectPool* pPool = CConnectPool::GetInstance();
-	//TestSQL();
-	for(int i = 0; i < 1000; i++)
+	for(int i = 0; i < 1; i++)
 	{
 		TestMutliConnect();
 	}

@@ -50,6 +50,10 @@ private:
 	int ReConnect(void);
 	//尝试重连方式的执行SQL语句
 	int QuerySQL(const char* pSQL, int len);
+
+	//no copy
+	CMysqlHandle(const CMysqlHandle&);
+	CMysqlHandle& operator=(const CMysqlHandle&);
 };
 
 #endif /* MYSQLINTF_H_ */
