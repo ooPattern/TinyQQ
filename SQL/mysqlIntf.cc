@@ -11,7 +11,7 @@
 #include "connectPool.h"
 
 //查询语句
-#define QUERY_LIDI_RECORD ("SELECT * FROM pupil WHERE name='lidi';")
+//#define QUERY_LIDI_RECORD ("SELECT * FROM pupil WHERE name='lidi';")
 
 //为什么命令行登陆mysql -u root在netstat命令上看不到连接信息:netstat -na | grep 3306
 //但是用程序执行mysql_real_connect就可以通过netstat看到连接信息？难道命令行没有连接到服务器吗?
@@ -46,11 +46,14 @@
 //	 如果连接失效,那么通过mysql_ping尝试再次进行连接
 //4*) 如果连接还没回收到内存中,进程就异常退出,中间丢失的连接内存和连接池中的内存怎么管理?
 // 	  要不连接池还是通过vector管理(最后统一释放),否则中途pop(进程奔溃会丢失这个连接的内存没有释放),
-//5*) 如果连接池的连接不够用,还需要在mysqlIntf维护一个非连接池的连接吧,虽然可能频繁导致
+//5*) 如果连接池的连接不够用,还需要在connectPool维护一个非连接池的链表,虽然可能频繁导致
 //	 TIME_WAIT,总比没有连接可用好
 //6) 如何检查new后面有没有析构,用信号函数模拟进程崩溃,进程中途崩溃会执行析构函数吗?
 //	 throw 1,abort();就算进程崩溃,没有运行析构函数,但是进程退出系统会回收进程分配的内存
 //7) Linux有没有工具可以检查内存泄露?
+//8***）多进程或者多线程调用数据库时,如果采用单连接方式需要加锁,确定某一时刻只能一个进程在访问,如果修改为
+// 	 1个进程对应一个连接,就可以同时访问数据库了,也不需要加锁,但是如果返回查询的结果给调用者?
+//	 可以在调用者启动一个数据库连接(连接池),就可以获取查询的数据了.
 
 //GetInstance为静态函数,不需要初始化对象也能直接调用
 //CConnectPool* s_pInstance = CConnectPool::GetInstance();
@@ -230,24 +233,6 @@ void CMysqlHandle::ShowResult(T_SQL_RECORD& result)
 	printf("\n");
 }
 
-//测试多个连接,用netstat检查3306端口是否存在过多的TIME_WAIT状态
-void TestMutliConnect(void)
-{
-	CMysqlHandle sql;
-	T_SQL_RECORD result;
-
-	//连接数据库
-	sql.Connect("127.0.0.1", MYSQL_PORT, "root", NULL, "student");
-
-	//模拟进程崩溃,检查是否会调用析构函数
-	abort();
-
-	//SQL查询
-	sql.SelectQuery(QUERY_LIDI_RECORD, result);
-	//打印查询结果
-	sql.ShowResult(result);
-}
-
 //测试代码参考
 int TestSQL(void)
 {
@@ -311,21 +296,6 @@ int TestSQL(void)
 	}
 
 	mysql_close( pMysql );
-
-	return 0;
-}
-
-int main( void )
-{
-	printf("hello world\n");
-	//初始化连接池内存
-	CConnectPool* pPool = CConnectPool::GetInstance();
-	for(int i = 0; i < 1; i++)
-	{
-		TestMutliConnect();
-	}
-	//需要手动方式回收内存?
-	pPool->DestoryConnectPool();
 
 	return 0;
 }

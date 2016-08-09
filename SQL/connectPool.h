@@ -9,11 +9,13 @@
 #define CONNECTPOOL_H_
 
 #include <vector>
-#include <tr1/memory>
 #include <mysql/mysql.h>
 
+//没有使用智能指针
+//#include <tr1/memory>
+//using std::tr1::shared_ptr;
+
 using std::vector;
-using std::tr1::shared_ptr;
 
 const int MAX_CONNECT_NUM = 10;
 
