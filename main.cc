@@ -36,7 +36,9 @@ void Task1_MutliConnect(void*)
 //任务2: 打印线程ID, 测试线程池是否执行了该任务
 void Task2_PrintTID(void*)
 {
-	printf("Task2_PrintTID tid=0x%lx\n", pthread_self());
+	static int s_sum = 0;
+	printf("cycle=%d : Task2_PrintTID tid=0x%lx\n", ++s_sum, pthread_self());
+	sleep(1);
 }
 
 int main( void )
@@ -54,7 +56,7 @@ int main( void )
 	if(0 == re)
 	{
 		//添加数据库查询任务和其他任务
-		for(int i = 0; i < 1; i++)
+		for(int i = 0; i < 20; i++)
 		{
 			//添加数据库查询任务
 			//task.pCtx = NULL;
@@ -67,10 +69,10 @@ int main( void )
 		}
 	}
 
-	//发现存在2个问题:
+	//发现存在2个问题:(已解决)
 	//1) 不加sleep,进程直接退出,不执行刚添加的任务
 	//2) 加sleep,进程下的线程会执行任务队列的任务,但是sleep返回后线程没有正常退出(没有调用析构?)
-	sleep(3);
+	//sleep(3);
 
 	printf("go to end?\n");
 

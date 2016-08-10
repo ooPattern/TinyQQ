@@ -22,6 +22,12 @@ typedef struct {
     void (*pHandle)(void* pArg);//任务处理函数
 } T_TASK;
 
+//统计线程运行次数最好不要用map,虽然线程ID唯一,但是感觉不好扩展更多的信息
+typedef struct {
+	pthread_t id;//线程ID
+	int runTimes;//线程运行次数
+} T_THREAD_ID;
+
 //线程池类,任务是否需要添加优先级,让高优先级的任务先执行
 class CThreadPool {
     //线程池最大的线程数量
@@ -42,15 +48,20 @@ public:
     int InitThreadPool(int threadNum);
     //销毁线程池,注意销毁线程池后就不能再使用线程池,因为已经释放了内存
     void DestoryThreadPool(void);
+    //查看线程的运行情况,统计线程的负载是否均衡,计算每个线程运行的任务数量
+    void CalcThreadLoad(void);
 
 private:
     bool _shutdown;//判断线程池是否已经销毁,不能重复销毁
+    //队列等待任务,线程池销毁前必须等待队列中所有任务执行完成后才能销毁
+    //该值表示等待的任务,为0表示所有任务执行完成
+    int _waitting;
 
     pthread_mutex_t _lock;//互斥锁用于同步任务队列的添加和删除
     pthread_cond_t _cond;//条件变量,和互斥锁配合使用,满足条件才唤醒线程处理任务
     
     int _threadNum;//线程数量
-    vector<pthread_t> _tid;//线程id,退出线程时通过线程id进行广播唤醒线程
+    vector<T_THREAD_ID> _tid;//线程id,退出线程时通过线程id进行广播唤醒线程
 
     deque<T_TASK> _taskQueue;//任务队列,需要执行的任务会添加的任务队列中,在线程空闲的时候执行
 
