@@ -9,6 +9,8 @@
 #define CONNECTPOOL_H_
 
 #include <vector>
+#include <list>
+#include <pthread.h>
 #include <mysql/mysql.h>
 
 //没有使用智能指针
@@ -16,11 +18,12 @@
 //using std::tr1::shared_ptr;
 
 using std::vector;
-
-const int MAX_CONNECT_NUM = 10;
+using std::list;
 
 //连接池类
 class CConnectPool {
+	const int MAX_CONNECT_NUM = 10;
+
 	//连接状态
 	typedef enum {
 		CONN_INVALID = 0,//连接无效,不能使用
@@ -50,7 +53,18 @@ public:
 	void DestoryConnectPool(void);
 
 private:
+	//多个线程有可能同时访问连接池,因此需要互斥锁同步
+	//在任务队列中,同时加入多个数据库查询任务,多个线程可能同时访问线程池第一个可用的连接
+	//因此在连接数据库过程中必须通过互斥量进行同步,数据库连接完成了,同步的任务也完成了
+	pthread_mutex_t _lock;
+
+	//固定分配,根据构造函数初始化确定连接池的连接数量
 	vector<T_CONNECT_OBJ> _connPool;
+
+	//动态分配,如果连接池的连接数不够用,只能通过系统动态分配新的连接
+	//虽然连接频繁创建和断开会消耗系统资源,而且造成大量TIME_WAIT,但是总比不能使用好
+	list<T_CONNECT_OBJ> _exConnList;
+
 	static CConnectPool* _pInstance;
 
 	//构造函数,在private中声明防止其他程序new,因为连接池只允许一个对象

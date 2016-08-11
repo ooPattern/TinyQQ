@@ -341,18 +341,27 @@ void CThreadPool::AddTaskHandle(const T_TASK& task)
     CondSignal(&_cond);
 }
 
+//检查是否当前所有任务已经处理完成
+bool CThreadPool::IsAllTaskFinish(void)
+{
+	return ((_waitting > 0) ? (false) : (true));
+}
+
 //查看线程的运行情况,统计线程的负载是否均衡,计算每个线程运行的任务数量
 void CThreadPool::CalcThreadLoad(void)
 {
+	int total = 0;
+
 	printf("-----------------THREAD LOAD--------------------\n");
 	printf("TID:				RUN_TIMES:\n");
 
 	vector<T_THREAD_ID>::const_iterator it;
 	for(it = _tid.begin(); it != _tid.end(); ++it)
 	{
-
 		printf("0x%lX			%d\n", (*it).id, (*it).runTimes);
+		total += (*it).runTimes;
 	}
+	printf("\nTOTAL TASK:			%d\n", total);
 	printf("-----------------THREAD END----------------------\n");
 }
 

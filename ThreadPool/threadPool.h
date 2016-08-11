@@ -50,6 +50,8 @@ public:
     void DestoryThreadPool(void);
     //查看线程的运行情况,统计线程的负载是否均衡,计算每个线程运行的任务数量
     void CalcThreadLoad(void);
+    //检查是否当前所有任务已经处理完成
+    bool IsAllTaskFinish(void);
 
 private:
     bool _shutdown;//判断线程池是否已经销毁,不能重复销毁

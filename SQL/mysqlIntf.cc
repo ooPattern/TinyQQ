@@ -76,7 +76,11 @@ CMysqlHandle::~CMysqlHandle()
 		mysql_free_result(_pRes);
 		_pRes = NULL;
 	}
-	//_pConnect指向的内存由连接池进行管理,不能自己手动释放这个指针指向的内存
+	//通过连接池或者连接链表回收连接
+	//回收连接不能在SelectQuery或者ModifyQuery中执行,
+	//因为查询结果集也需要继续使用连接,如果在查询结果集前就释放连接了,查询会出现问题
+	//但是这样会导致必须等待析构才会释放连接,
+	CConnectPool::GetInstance()->RecoverConnection(_pConnect);
 	_pConnect = NULL;
 }
 
@@ -99,7 +103,7 @@ int CMysqlHandle::Connect(const char* pHost,
 	pSQL = CConnectPool::GetInstance()->GetConnection(pHost, port, pUser, pPassword, pDbname);
 	if(NULL == pSQL)
 	{
-		printf("mysql_real_connect errr\n");
+		printf("mysql_real_connect err\n");
 		return -1;
 	}
 	//设置连接成功标志
@@ -142,7 +146,7 @@ int CMysqlHandle::QuerySQL(const char* pSQL, int len)
 	return 0;
 }
 
-//查询数据库,输出结果集
+//查询数据库,输出结果集,该函数返回前必须释放连接
 int CMysqlHandle::SelectQuery(const char* pSQL, T_SQL_RECORD& result)
 {
 	int re = 0;
@@ -159,8 +163,6 @@ int CMysqlHandle::SelectQuery(const char* pSQL, T_SQL_RECORD& result)
 	}
 	//执行SQL查询语句
 	re = QuerySQL(pSQL, strlen(pSQL));
-	//不管成功还是失败,先回收连接到连接池
-	CConnectPool::GetInstance()->RecoverConnection(_pConnect);
 	if(re != 0)
 	{
 		printf("SelectQuery err\n");
@@ -202,8 +204,6 @@ int CMysqlHandle::ModifyQuery(const char* pSQL)
 	}
 	//执行SQL查询语句
 	re = QuerySQL(pSQL, strlen(pSQL));
-	//不管成功还是失败,先回收连接到连接池
-	CConnectPool::GetInstance()->RecoverConnection(_pConnect);
 	if(re != 0)
 	{
 		printf("SelectQuery (Modify) err\n");
@@ -216,11 +216,11 @@ int CMysqlHandle::ModifyQuery(const char* pSQL)
 void CMysqlHandle::ShowResult(T_SQL_RECORD& result)
 {
 	//打印字段名称
-	for(int i = 0; i < result.nField; i++)
-	{
-		printf("%s\t", result.pField[i].name);
-	}
-	printf("\n");
+	//for(int i = 0; i < result.nField; i++)
+	//{
+	//	printf("%s\t", result.pField[i].name);
+	//}
+	//printf("\n");
 	//打印结果集
 	vector<MYSQL_ROW>::const_iterator it;
 	for(it = result.records.begin(); it != result.records.end(); ++it)
@@ -234,10 +234,11 @@ void CMysqlHandle::ShowResult(T_SQL_RECORD& result)
 }
 
 //测试代码参考
-int TestSQL(void)
+void TestSQL(void*)
 {
 	//连接数据库
-	MYSQL* pMysql;
+	MYSQL* pMysql = NULL;
+	//MYSQL* pTmpSql = NULL;
 	MYSQL_RES* pResult;
 	MYSQL_ROW row;
 	MYSQL_FIELD* pField;
@@ -248,56 +249,89 @@ int TestSQL(void)
 	if( NULL == ( pMysql = mysql_init(NULL) ) )
 	{
 		printf( "sql init err\n" );
-		return -1;
+		return;
 	}
-
-	//连接数据库
-	if( NULL == mysql_real_connect( pMysql, "localhost", "root", NULL, "testOath", 3306, NULL, 0 ) )
+#if 0
+	//初始化第二个数据库
+	if( NULL == ( pTmpSql = mysql_init(NULL) ) )
 	{
-		printf( "sql connect err\n" );
-		return -1;
+		printf( "sql init err\n" );
+		return;
+	}
+#endif
+
+	//第一次连接数据库
+	if( NULL == mysql_real_connect( pMysql, "127.0.0.1", "root", NULL, "student", 3306, NULL, 0 ) )
+	//if( NULL == mysql_real_connect( pMysql, "localhost", "root", NULL, "testOath", 3306, NULL, 0 ) )
+	{
+		mysql_close( pMysql );
+		//mysql_close( pTmpSql );
+		printf( "sql first connect err\n" );
+		return;
 	}
 
-	printf("%s-%s-%s\n", pMysql->host, pMysql->user, pMysql->db);
+#if 0
+	//尝试第二次连接同样的数据库,检查是否能够连接成功
+	//如果是同一个内存地址,连续连接2次就会有问题,线程池同时触发多个连接失败也是这个问题,
+	//这种情况只有第一个连接成功的连接能用
+	if( NULL == mysql_real_connect( pMysql, "127.0.0.1", "root", NULL, "student", 3306, NULL, 0 ) )
+	//if( NULL == mysql_real_connect( pMysql, "localhost", "root", NULL, "testOath", 3306, NULL, 0 ) )
+	{
+		mysql_close( pMysql );
+		mysql_close( pTmpSql );
+		printf( "sql second connect err\n" );
+		return;
+	}
+#endif
 
 	//查询所有数据
-	if( mysql_query( pMysql, "SELECT * FROM pet" ) != 0 )
+	if( mysql_query( pMysql, "SELECT * FROM pupil WHERE name='lidi';" ) != 0 )
+	//if( mysql_query( pMysql, "SELECT * FROM pet" ) != 0 )
 	{
 		printf( "sql query no return\n" );
 	}
 	else
 	{
+		//如果执行完SQL语句就释放连接会不会出问题?
+		//mysql_close( pMysql );
+
 		//存储查询结果
-		if( NULL == ( pResult = mysql_store_result( pMysql ) ) )
+		if( ( pResult = mysql_store_result( pMysql ) ) != NULL )
 		{
-			printf( "sql query err\n" );
-			return -1;
-		}
-
-		//显示查询结果
-		nRow = mysql_num_rows( pResult );
-		nCol = mysql_num_fields( pResult );
-		printf( "sql query %d lines\n", nRow );
-		while( ( row = mysql_fetch_row( pResult ) ) != NULL )
-		{
-			//逐行显示
-			for( int i = 0; i < nCol; i++ )
+			//显示查询结果
+			nRow = mysql_num_rows( pResult );
+			nCol = mysql_num_fields( pResult );
+			printf( "sql query %d lines\n", nRow );
+			//printf("%s-%s-%s\n", pMysql->host, pMysql->user, pMysql->db);
+			while( ( row = mysql_fetch_row( pResult ) ) != NULL )
 			{
-				if( ( pField = mysql_fetch_field_direct( pResult, i ) ) != NULL )
+				//逐行显示
+				for( int i = 0; i < nCol; i++ )
 				{
-					printf( "%s: %-8s, ", pField->name, row[i] );
+					if( ( pField = mysql_fetch_field_direct( pResult, i ) ) != NULL )
+					{
+						printf( "%s: %-8s, ", pField->name, row[i] );
+					}
 				}
+				printf( "\n" );
 			}
-			printf( "\n" );
-		}
 
-		//释放数据库相关的内存
-		mysql_free_result( pResult );
+			//释放数据库相关的内存
+			mysql_free_result( pResult );
+		}
+		else
+		{
+			printf("mysql_store_result return err\n");
+		}
 	}
 
 	mysql_close( pMysql );
 
-	return 0;
+#if 0
+	mysql_close( pTmpSql );
+#endif
+
+	return;
 }
 
 
