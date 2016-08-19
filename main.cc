@@ -12,6 +12,7 @@
 #include "SQL/mysqlIntf.h"
 #include "SQL/connectPool.h"
 #include "ThreadPool/threadPool.h"
+#include "Server/server.h"
 
 #define QUERY_LIDI_RECORD ("SELECT * FROM pupil WHERE name='lidi';")
 #define QUERY_YANGYONG_RECORD ("SELECT * FROM pupil WHERE name='yangyong';")
@@ -35,10 +36,7 @@ void Task1_MutliConnect(void*)
 		sql.SelectQuery(QUERY_YANGYONG_RECORD, result);
 		sql.ShowResult(result);
 	}
-
 }
-
-
 
 //任务2: 打印线程ID, 测试线程池是否执行了该任务
 void Task2_PrintTID(void*)
@@ -48,7 +46,8 @@ void Task2_PrintTID(void*)
 	sleep(1);
 }
 
-int main( void )
+//数据库和线程池测试函数,验证同时多个数据库查询任务的性能
+void Test_Mysql_ThreadPool(void)
 {
 	int re = 0;
 	T_TASK task;
@@ -92,6 +91,24 @@ int main( void )
 	//需要手动方式回收连接池内存?,是的,不然会内存泄露
 	pConnPool->DestoryConnectPool();
 	printf("go to end?\n");
+}
+
+//连接成功回调函数
+void OnConnection_Task(int connfd)
+{
+	static int s_connTime = 0;
+	printf("No:%d enter ConnectCallback_Task...\n", ++s_connTime);
+}
+
+int main( void )
+{
+	printf("ooxx: hello world\n");
+
+	CONNECTION_CALLBACK_FUNC connFunc = OnConnection_Task;
+	CTcpServer server;
+	server.StartServer(12345);
+	server.SetConnectCallback(connFunc);
+	server.Loop();
 
 	return 0;
 }

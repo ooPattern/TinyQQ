@@ -9,6 +9,7 @@ RM := rm -rf
 # All of the sources participating in the build are defined here
 -include sources.mk
 -include ThreadPool/subdir.mk
+-include Server/subdir.mk
 -include SQL/subdir.mk
 -include subdir.mk
 -include objects.mk
